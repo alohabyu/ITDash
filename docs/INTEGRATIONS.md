@@ -103,7 +103,7 @@ ITDash มี adapter สำหรับ **Zabbix, Prometheus, Elasticsearch, Ve
 2. ตั้ง `VEEAM_URL=https://<vbr>:9419`, `VEEAM_USERNAME`, `VEEAM_PASSWORD`
 3. ตั้ง `VEEAM_API_VERSION` ให้ตรงกับเวอร์ชันของ B&R — ถ้าไม่ตรง request จะล้มเหลว
    (เช่น `1.3-rev1` สำหรับ v13.0.1) ดูค่าที่รองรับได้ที่ `https://<vbr>:9419/swagger/ui/index.html`
-4. B&R ใช้ใบรับรอง self-signed เป็นค่าเริ่มต้น — export ใบรับรองแล้วตั้ง `NODE_EXTRA_CA_CERTS` (อย่าปิดการตรวจ TLS)
+4. B&R ใช้ใบรับรอง self-signed เป็นค่าเริ่มต้น — export ใบรับรองแล้วตั้ง `NODE_EXTRA_CA_CERTS` **ใน environment ของ service** (ไม่ใช่ `.env.local` — Node อ่านค่านี้ก่อนโหลดไฟล์นั้น) อย่าปิดการตรวจ TLS
 
 ITDash เรียก `POST /api/oauth2/token` → `GET /api/v1/jobs/states` (สถานะ/ผลล่าสุด) และ `GET /api/v1/sessions` (คำนวณระยะเวลา)
 job ที่ disabled จะไม่แสดง · job บางประเภท (เช่น Proxmox) อาจไม่มี `lastRun` จะแสดงเป็น "never"
@@ -150,7 +150,7 @@ npm run build && npm start      # หรือ npm run dev
 | --- | --- |
 | `zabbix: host.get: Not authorized.` | token ผิด/หมดอายุ หรือ role ไม่ได้อนุญาต method นั้น |
 | `cannot reach … (ECONNREFUSED)` | URL/port ผิด หรือ firewall ปิด |
-| `cannot reach … (self-signed certificate)` | ต้องตั้ง `NODE_EXTRA_CA_CERTS` |
+| `cannot reach … (self-signed certificate)` | ต้องตั้ง `NODE_EXTRA_CA_CERTS` ใน environment ของ service (systemd `Environment=`) ไม่ใช่ใน `.env.local` |
 | `veeam: HTTP 400` | `VEEAM_API_VERSION` ไม่ตรงกับเวอร์ชัน B&R |
 | `elasticsearch: HTTP 403` | API key ไม่มีสิทธิ์ read บน `ES_INDEX` |
 | การ์ด Service health ว่าง | `PROM_Q_PROBE` ไม่คืน series — ลองใน Prometheus ก่อน |
@@ -161,6 +161,6 @@ npm run build && npm start      # หรือ npm run dev
 
 - [ ] ทุกบัญชีที่ ITDash ใช้เป็น **read-only** และใช้กับ ITDash อย่างเดียว
 - [ ] เก็บค่าลับใน `.env.local` บน server เท่านั้น ห้ามใช้ prefix `NEXT_PUBLIC_`
-- [ ] HTTPS ทุกเส้นทาง ใบรับรองภายในใช้ `NODE_EXTRA_CA_CERTS` — ห้ามตั้ง `NODE_TLS_REJECT_UNAUTHORIZED=0`
+- [ ] HTTPS ทุกเส้นทาง ใบรับรองภายในใช้ `NODE_EXTRA_CA_CERTS` (ตั้งใน service ไม่ใช่ `.env.local`) — ห้ามตั้ง `NODE_TLS_REJECT_UNAUTHORIZED=0`
 - [ ] dashboard เปิดเฉพาะเครือข่ายภายใน/VPN และบังคับล็อกอิน (SSO — ยังไม่ได้ทำ)
 - [ ] ตั้งรอบหมุนเวียน token / API key / รหัสผ่าน (เช่น ทุก 90 วัน)
