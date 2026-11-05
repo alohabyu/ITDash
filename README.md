@@ -85,7 +85,7 @@ docker compose up -d --build         # http://<host>:3000
 - ใช้บัญชี/API key แบบ **read-only** ที่สร้างให้ ITDash โดยเฉพาะ — วิธีสร้างของแต่ละระบบอยู่ใน [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
 - ใบรับรองภายใน/self-signed: ตั้ง `NODE_EXTRA_CA_CERTS` **ใน environment ของ service หรือ container** ไม่ใช่ใน `.env.local`
   (Node อ่านค่านี้ก่อนโหลดไฟล์นั้น) — `compose.yaml` ตั้งไว้ให้แล้ว
-- log file ต่างๆ ให้ส่งเข้า Elasticsearch ด้วย Filebeat / Winlogbeat / Elastic Agent แล้วจะขึ้นใน Event log เอง
+- log file ต่างๆ ต้องส่งเข้า Elasticsearch และแยก field เวลา / ระดับ / ข้อความก่อน — ทำตาม [docs/LOGS.md](docs/LOGS.md)
 
 ## คำสั่ง
 
@@ -164,6 +164,7 @@ Health check: `GET /api/health` → `{"status":"ok"}`
 | [docs/INSTALL.md](docs/INSTALL.md) | ขั้นตอนการติดตั้งบน Mac mini — Docker หรือ Node.js + launchd, อัปเดต, ถอดออก |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | ไดอะแกรมสถาปัตยกรรม, การไหลของข้อมูล, สถานะของการ์ด, การวางเครื่องในเครือข่าย |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | วิธีเชื่อมต่อแต่ละระบบ (+ log files), ทดสอบ, ตารางแก้ปัญหา, checklist ความปลอดภัย |
+| [docs/LOGS.md](docs/LOGS.md) | นำ log file มาแสดง: field ที่ต้องมี, ส่งเข้า Elasticsearch, ingest pipeline, เรื่องเขตเวลา, ตรวจผล |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, ปรับโหลด, หลาย replica และข้อแลกเปลี่ยน, ผลทดสอบโหลด |
 
 ## ข้อจำกัดตอนนี้

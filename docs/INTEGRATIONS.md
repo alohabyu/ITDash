@@ -93,7 +93,7 @@ ITDash มี adapter สำหรับ **Zabbix, Prometheus, Elasticsearch, Ve
 | syslog จาก switch / firewall | Elastic Agent *Syslog* / Logstash `syslog` input | map severity → `log.level` |
 | log ที่ขึ้นหลายบรรทัด (stack trace) | ตั้ง `multiline` ใน Filebeat | ITDash แสดงเฉพาะบรรทัดแรก |
 
-ถ้าบาง log ตั้ง `log.level` ไม่ได้จริงๆ ตั้ง `ES_FILTER` ให้กรองด้วยคำในข้อความแทน เช่น `message:(ERROR OR FATAL)`
+ขั้นตอนเต็ม (สำรวจ log → ส่ง → แยก field → ตรวจ → ตั้งค่า) และกรณี log ที่ไม่มีระดับ ดู [LOGS.md](./LOGS.md) — ITDash เลือก log ด้วย `log.level` เสมอ ใส่แค่ `ES_FILTER` อย่างเดียวจะไม่ขึ้น
 
 ---
 
