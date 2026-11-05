@@ -33,6 +33,9 @@ Dashboard ภาพรวมงานไอทีขององค์กร —
 
 ## เริ่มใช้งาน
 
+> **ติดตั้งใช้งานจริงบน Mac mini / server** → ทำตาม [docs/INSTALL.md](docs/INSTALL.md) ทีละขั้น
+> (เตรียมเครื่อง, Docker หรือ Node.js, เปิดเองหลังรีบูต, อัปเดต, ตรวจหลังติดตั้ง)
+
 ต้องใช้ **Node.js 20.9+** (หรือ Docker) — ฟอนต์ติดตั้งผ่าน npm จึง build ได้โดยไม่ต้องต่อ Google Fonts
 
 **1. ดูหน้าตาด้วยข้อมูลตัวอย่าง**
@@ -158,6 +161,7 @@ Health check: `GET /api/health` → `{"status":"ok"}`
 
 | เอกสาร | เนื้อหา |
 | --- | --- |
+| [docs/INSTALL.md](docs/INSTALL.md) | ขั้นตอนการติดตั้งบน Mac mini — Docker หรือ Node.js + launchd, อัปเดต, ถอดออก |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | ไดอะแกรมสถาปัตยกรรม, การไหลของข้อมูล, สถานะของการ์ด, การวางเครื่องในเครือข่าย |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | วิธีเชื่อมต่อแต่ละระบบ (+ log files), ทดสอบ, ตารางแก้ปัญหา, checklist ความปลอดภัย |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, ปรับโหลด, หลาย replica และข้อแลกเปลี่ยน, ผลทดสอบโหลด |

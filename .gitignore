@@ -45,3 +45,6 @@ next-env.d.ts
 # CA bundles for Docker (keep out of Git)
 certs/*
 !certs/.gitkeep
+
+# launchd log (docs/INSTALL.md)
+itdash.log

@@ -9,3 +9,4 @@ docs
 !README.md
 tsconfig.tsbuildinfo
 .env.fake
+itdash.log
