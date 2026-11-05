@@ -1,0 +1,23 @@
+# ITDash — single instance (enough for an IT team; see docs/DEPLOYMENT.md)
+#   docker compose up -d --build
+services:
+  itdash:
+    build: .
+    image: itdash:latest
+    env_file: .env.local          # URLs + tokens; read at request time, no rebuild needed
+    environment:
+      # CA bundle for internal / self-signed certs (Veeam, Cohesity). Put the file in ./certs/
+      NODE_EXTRA_CA_CERTS: /certs/ca-bundle.pem
+    volumes:
+      - ./certs:/certs:ro
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G           # ~420 MB measured under load
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

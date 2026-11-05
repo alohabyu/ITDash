@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  // Docker builds set NEXT_OUTPUT=standalone → a self-contained server in .next/standalone.
+  // Left off otherwise so `npm start` keeps working.
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   partialPrefetching: true,
 
   /**

@@ -10,6 +10,7 @@ Dashboard สำหรับงานไอทีขององค์กร (ne
 npm install
 npm run dev        # http://localhost:3000
 npm run build && npm start   # production
+docker compose up -d --build # หรือรันด้วย Docker (docs/DEPLOYMENT.md)
 ```
 
 ต้องใช้ Node.js 20+ — ฟอนต์ (IBM Plex Sans / Mono / Sans Thai) ติดตั้งผ่าน npm จึง build ได้แม้ไม่มีอินเทอร์เน็ต
@@ -79,6 +80,7 @@ src/
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — ไดอะแกรมสถาปัตยกรรม, การไหลของข้อมูล, การวางเครื่องในเครือข่าย
 - [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — วิธีเชื่อมต่อ Zabbix, Prometheus, Elasticsearch (+ log files), Veeam, Cohesity และการแก้ปัญหา
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — รันด้วย Docker, เพิ่ม replica, ผลทดสอบโหลด
 - [.env.example](.env.example) — ตัวแปรที่ต้องตั้งเมื่อต่อระบบจริง
 
 ## Design notes

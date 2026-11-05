@@ -41,3 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# CA bundles for Docker (keep out of Git)
+certs/*
+!certs/.gitkeep
