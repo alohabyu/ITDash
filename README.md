@@ -57,6 +57,12 @@ src/
 
 **ต่อข้อมูลจริง** — หน้า Overview อ่านข้อมูลจาก `src/lib/data/overview.ts` เท่านั้น เปลี่ยนแต่ละ export ให้ไป fetch จาก API (Zabbix, PRTG, GLPI, Veeam ฯลฯ) โดยคง type เดิมไว้ หน้าจอก็ไม่ต้องแก้
 
+## เอกสาร
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — ไดอะแกรมสถาปัตยกรรม, การไหลของข้อมูล, การวางเครื่องในเครือข่าย
+- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — วิธีเชื่อมต่อ Zabbix, Uptime Kuma, GLPI, Veeam, Graylog/Wazuh และ SSO
+- [.env.example](.env.example) — ตัวแปรที่ต้องตั้งเมื่อต่อระบบจริง
+
 ## Design notes
 
 - ตัวเลข/label/log ใช้ monospace ส่วนเนื้อความใช้ sans เพื่อให้อ่านง่าย
