@@ -1,215 +1,166 @@
 # การเชื่อมต่อแหล่งข้อมูล
 
-คู่มือนี้บอกว่าการ์ดแต่ละใบบน ITDash ควรดึงข้อมูลจากระบบไหน ผ่าน API อะไร
-และต้องเตรียมอะไรฝั่งระบบต้นทาง ดูภาพรวมสถาปัตยกรรมได้ที่ [ARCHITECTURE.md](./ARCHITECTURE.md)
+ITDash มี adapter สำหรับ **Zabbix, Prometheus, Elasticsearch, Veeam B&R และ Cohesity** อยู่แล้ว
+ตั้งค่าใน `.env.local` (ดูตัวอย่างใน [`.env.example`](../.env.example)) แล้วตั้ง `DATA_SOURCE=live` — ไม่ต้องแก้โค้ด
 
-> ชื่อระบบในเอกสารนี้เป็นตัวที่หน่วยงานไทยใช้กันบ่อย ถ้าใช้ตัวอื่น (PRTG, LibreNMS, osTicket, Proxmox Backup ฯลฯ)
-> โครงเหมือนเดิมทุกอย่าง — เขียน adapter ใหม่ให้คืนค่าเป็น type เดิม
+ภาพรวมสถาปัตยกรรมดูที่ [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ---
 
-## สรุป: การ์ด → ระบบ → API
+## สรุป: การ์ด → ระบบ
 
-| การ์ด | ระบบที่แนะนำ | API / method | ความสด (cache) |
+| การ์ด | ระบบ | ข้อมูลที่ใช้ | cache |
 | --- | --- | --- | --- |
-| แถบแจ้ง incident | Zabbix | `problem.get` (severity ≥ High) | 30 วินาที |
-| KPI Services up, Service health | Uptime Kuma (หรือ Zabbix web scenario) | status page heartbeat JSON | 30 วินาที |
-| WAN throughput 24h | Zabbix (SNMP interface items) | `history.get` / `trend.get` | 5 นาที |
-| Storage capacity | Zabbix `vfs.fs.size`, vCenter, Veeam repositories | `item.get` / `GET /api/vcenter/datastore` | 1 ชั่วโมง |
-| Ticket queue, KPI tickets | GLPI | `/api.php` (v2) หรือ `/apirest.php` (v1) | 1 นาที |
-| Backup jobs, KPI backups | Veeam B&R | `GET /api/v1/jobs/states` | 5–15 นาที |
-| Event log | Zabbix + Graylog / Wazuh | `event.get` + search API | 30 วินาที |
-| ผู้ใช้ / สิทธิ์เข้า dashboard | Active Directory หรือ Entra ID | LDAPS / OIDC (Auth.js) | — |
+| แถบแจ้ง incident | Zabbix | problem ที่ severity High / Disaster | 30 วินาที |
+| KPI Hosts up | Zabbix | `host.get` + สถานะ interface | 30 วินาที |
+| KPI Active problems | Zabbix | `problem.get` (ไม่นับที่ถูก suppress) | 30 วินาที |
+| KPI Probe latency | Prometheus | `PROM_Q_LATENCY` ย้อนหลัง 2 ชม. | 30 วินาที |
+| KPI Log errors · 1h | Elasticsearch | นับ log ระดับ error ขึ้นไป เทียบชั่วโมงก่อน | 30 วินาที |
+| WAN throughput 24h | Prometheus | `PROM_Q_WAN_IN` / `PROM_Q_WAN_OUT` เฉลี่ยรายชั่วโมง | 5 นาที |
+| Storage capacity | Zabbix | item `vfs.fs.size` / `vfs.fs.dependent.size` (used, total) | 15 นาที |
+| Service health | Prometheus | `PROM_Q_PROBE` (blackbox `probe_success`) 3 ชม. + uptime 30 วัน | 30 วินาที |
+| Event log | Zabbix + Elasticsearch | problem ที่เปิดอยู่ + log ระดับ warn/error 24 ชม. | 30 วินาที |
+| Backup jobs | Veeam + Cohesity | สถานะรันล่าสุดของแต่ละ job / protection group | 5 นาที |
+| Ticket queue | — | ยังไม่มีระบบ ticket (แสดงข้อมูลตัวอย่าง) | — |
 
-**ลำดับที่แนะนำ:** เริ่มจาก **Zabbix** ก่อน เพราะตัวเดียวครอบคลุมได้ 4–5 การ์ด
-แล้วตามด้วย GLPI → Veeam → SSO → log/security
+**ป้ายมุมขวาของการ์ด** บอกสถานะข้อมูล
+`● zabbix` = ข้อมูลจริง · `sample` = ข้อมูลตัวอย่าง · `● zabbix down` = ดึงไม่ได้ (เอาเมาส์ชี้เพื่อดูสาเหตุ) ·
+`● veeam + cohesity · partial` = ได้มาบางระบบ
+
+> ถ้าระบบล่ม การ์ดจะแสดง error พร้อมสาเหตุ **ไม่แสดงข้อมูลตัวอย่างแทน** — หน้าจอ ops ต้องไม่โชว์ตัวเลขปลอมที่ดูเหมือนจริง
+> และจะลองใหม่ทุก 15 วินาที
 
 ---
 
-## 1. Zabbix — network, servers, storage, incidents
+## 1. Zabbix
 
-**เตรียมฝั่ง Zabbix**
-1. สร้าง User role ชื่อ `api-readonly` → เปิด *Access to API* และจำกัด *API methods* ให้เหลือเฉพาะ `*.get`
-2. สร้าง user `itdash` ใช้ role นี้ ให้สิทธิ์อ่าน host group ที่ต้องการแสดง
-3. *Users → API tokens* → สร้าง token ให้ `itdash`
+**เตรียมฝั่ง Zabbix (6.4 / 7.x)**
+1. *Users → User roles* → สร้าง role `itdash-api` เปิด *Access to API* และจำกัด *API methods* ให้เหลือ
+   `host.get`, `problem.get`, `event.get`, `item.get`
+2. สร้าง user `svc-itdash` ใช้ role นี้ ให้สิทธิ์ **read** กับ host group ที่ต้องการแสดง
+3. *Users → API tokens* → สร้าง token ให้ `svc-itdash` (ตั้งวันหมดอายุ) → ใส่ใน `ZABBIX_TOKEN`
 
-**เรียก API**
-- Endpoint: `POST https://<zabbix>/api_jsonrpc.php`
-- ส่ง token ใน header `Authorization: Bearer <token>`
-  (Zabbix 7.2 ขึ้นไปเลิกใช้ field `auth` ใน body แล้ว)
-- ถ้า Zabbix อยู่หลัง Apache ที่เปิด Kerberos/SSO ทั้งเว็บ ต้องยกเว้น `api_jsonrpc.php`
-  ไม่อย่างนั้น header Bearer จะถูกแทนที่และเรียกไม่ผ่าน
+**หมายเหตุ**
+- ส่ง token ใน header `Authorization: Bearer` (Zabbix 7.2+ เลิกใช้ field `auth` แล้ว)
+- ถ้าหน้าเว็บ Zabbix อยู่หลัง Apache ที่เปิด Kerberos/SSO ต้องยกเว้น `api_jsonrpc.php` ไม่อย่างนั้น header จะถูกแทนที่
+- การ์ด Storage อ่าน item `used` + `total` ของ template OS มาตรฐาน (Linux/Windows by Zabbix agent)
+  แสดงเฉพาะ filesystem ≥ `ZABBIX_STORAGE_MIN_TB` เรียงจากเต็มมากสุด
+- **log file บนเครื่องที่มี Zabbix agent** ทำ item `log[]` / `logrt[]` + trigger ได้ — problem จะขึ้นในแถบ incident และ Event log เอง
 
-**method ที่ใช้**
+---
 
-| ต้องการ | method | หมายเหตุ |
+## 2. Prometheus
+
+**เตรียม:** บัญชีไม่จำเป็นถ้า Prometheus เปิดภายใน ถ้ามี reverse proxy ทำ auth ให้ใส่ `PROM_TOKEN` หรือ `PROM_USER`/`PROM_PASSWORD`
+
+**PromQL** — ค่าเริ่มต้นเป็นของ node_exporter + blackbox_exporter แก้ให้ตรงกับ exporter ที่ใช้จริง:
+
+| ตัวแปร | ต้องคืนค่า | ตัวอย่าง |
 | --- | --- | --- |
-| ปัญหาที่ยังเปิดอยู่ | `problem.get` | `recent: true`, `sortfield: "eventid"`, กรอง `severities: [4,5]` สำหรับแถบ incident |
-| สถานะ host | `host.get` | `selectInterfaces`, ดู `available` |
-| traffic ของ uplink | `item.get` หา itemid ของ `net.if.in[...]`/`net.if.out[...]` แล้ว `trend.get` (ราย ชม.) | trend เบากว่า history มากสำหรับกราฟ 24 ชม. |
-| พื้นที่ดิสก์ | `item.get` key `vfs.fs.size[*,pused]` | ใช้ `lastvalue` ได้เลย |
+| `PROM_Q_WAN_IN` / `PROM_Q_WAN_OUT` | series เดียว หน่วย Mbps | **SNMP exporter (if_mib):** `sum(rate(ifHCInOctets{instance="core-sw-01",ifName="xe-0/0/0"}[5m])) * 8 / 1e6`<br>**node_exporter (ค่าเริ่มต้น):** `sum(rate(node_network_receive_bytes_total{device!~"lo\|veth.*"}[5m])) * 8 / 1e6`<br>**windows_exporter:** `sum(rate(windows_net_bytes_received_total[5m])) * 8 / 1e6` |
+| `PROM_Q_PROBE` | หลาย series ค่า 0/1 — หนึ่ง series ต่อหนึ่งบริการ | `probe_success{job="blackbox-http"}` |
+| `PROM_Q_LATENCY` | series เดียว หน่วย ms | `avg(probe_duration_seconds{job="blackbox-http"}) * 1000` |
+| `PROM_PROBE_NAME_LABEL` | ชื่อ label ที่ใช้เป็นชื่อบริการ | `instance` (ค่าเริ่มต้น) หรือ label ที่ตั้งเองเช่น `service` |
+
+ทดสอบ query ในหน้า Prometheus (*Graph*) ก่อนใส่ ถ้าได้ผลลัพธ์ตามคอลัมน์ "ต้องคืนค่า" ก็ใช้ได้
+
+> แนะนำให้ติด label `service="e-Office"` ใน `scrape_configs` ของ blackbox แล้วตั้ง `PROM_PROBE_NAME_LABEL=service`
+> จะได้ชื่อบริการภาษาคนแทน URL
 
 ---
 
-## 2. Uptime Kuma — service health matrix
+## 3. Elasticsearch
 
-Uptime Kuma ไม่มี REST API อย่างเป็นทางการ แต่ทุก status page มี JSON endpoint ที่หน้าเว็บของมันเองใช้
+**เตรียมฝั่ง Elastic**
+1. สร้าง role `itdash-read` สิทธิ์ `read` + `view_index_metadata` บน index pattern ของ log (เช่น `logs-*`)
+2. สร้าง API key ผูกกับ role นี้ (*Stack Management → API keys*) → ใส่ค่า **encoded** ใน `ES_API_KEY`
 
-1. สร้าง status page (เช่น slug `itdash`) แล้วเพิ่ม monitor ที่ต้องการแสดง
-2. อ่าน `GET https://<kuma>/api/status-page/heartbeat/itdash` → ได้ heartbeat ล่าสุดของแต่ละ monitor
-   และค่า uptime 24 ชม. — แปลงเป็น `ServiceRow.checks[]` ได้ตรงๆ
-3. ถ้าต้องการ metric ละเอียดขึ้น เปิด API key แล้วอ่าน `/metrics` (รูปแบบ Prometheus)
+**field ที่ใช้** — ค่าเริ่มต้นตาม ECS (Filebeat, Elastic Agent, Winlogbeat ใช้ชื่อนี้อยู่แล้ว):
+`@timestamp`, `log.level`, `message`, `host.name` — ถ้า index ของคุณใช้ชื่ออื่นให้ตั้ง `ES_*_FIELD`
 
-> เพราะไม่ใช่ API ทางการ อาจเปลี่ยนเมื่ออัปเกรดเวอร์ชัน — ให้ล็อกเวอร์ชันและทดสอบหลังอัปเกรด
+ระดับ log ที่นับเป็น error: `error, err, crit, critical, fatal, alert, emerg` (ไม่สนตัวพิมพ์เล็ก/ใหญ่)
+ปรับได้ด้วย `ES_ERROR_LEVELS` และ `ES_LOG_LEVELS` · ตัด log ที่ไม่สนใจด้วย `ES_FILTER` (Lucene query)
 
-**ทางเลือก:** ใช้ Zabbix Web scenario (HTTP check) แทน แล้วอ่านด้วย `history.get` ของ item `web.test.fail[...]`
+### log file ต่างๆ → Elasticsearch
 
----
+แนะนำให้ส่ง log ทุกชนิดเข้า Elasticsearch ก่อน แล้ว ITDash อ่านจากที่เดียว
+(ไม่ให้ dashboard ไปอ่านไฟล์บนเครื่องต่างๆ เอง — ปลอดภัยกว่า และค้นย้อนหลังได้)
 
-## 3. GLPI — tickets และ assets
+| แหล่ง log | เครื่องมือส่ง | หมายเหตุ |
+| --- | --- | --- |
+| log ไฟล์ของแอป (`/var/log/app/*.log`) | Filebeat `filestream` หรือ Elastic Agent *Custom Logs* | ถ้าไฟล์ไม่มี field level ให้แยกด้วย `dissect`/`grok` ใน ingest pipeline แล้วเขียนลง `log.level` |
+| Windows Event Log | Winlogbeat หรือ Elastic Agent *Windows* integration | ได้ `log.level` มาให้แล้ว |
+| syslog จาก switch / firewall | Elastic Agent *Syslog* / Logstash `syslog` input | map severity → `log.level` |
+| log ที่ขึ้นหลายบรรทัด (stack trace) | ตั้ง `multiline` ใน Filebeat | ITDash แสดงเฉพาะบรรทัดแรก |
 
-**GLPI 11 (API v2)**
-1. *Setup → OAuth clients* → สร้าง client ให้ ITDash เลือก grant type **Client credentials** และ scope `api`
-2. ขอ token: `POST https://<glpi>/api.php/token` (`grant_type=client_credentials`, client id/secret, `scope=api`)
-   — token อายุ 1 ชั่วโมง ให้ adapter ขอใหม่อัตโนมัติเมื่อหมดอายุ
-3. อ่าน ticket: `GET https://<glpi>/api.php/Assistance/Ticket` พร้อมเงื่อนไขสถานะที่ยังไม่ปิด
-   ดู parameter ที่รองรับได้ที่หน้า `https://<glpi>/api.php/doc`
-
-**GLPI 10 (API v1)**
-- `GET /apirest.php/initSession` ส่ง header `App-Token` และ `Authorization: user_token <token>` → ได้ `Session-Token`
-- จากนั้นใช้ `/apirest.php/search/Ticket` กรองสถานะ และอ่าน `time_to_resolve` เพื่อนับงานที่เกิน SLA
-
-**ใช้กับการ์ด:** จัดกลุ่มตาม `itilcategories_id` → Ticket queue,
-เทียบ `time_to_resolve` กับเวลาปัจจุบัน → จำนวน "breaching SLA"
+ถ้าบาง log ตั้ง `log.level` ไม่ได้จริงๆ ตั้ง `ES_FILTER` ให้กรองด้วยคำในข้อความแทน เช่น `message:(ERROR OR FATAL)`
 
 ---
 
-## 4. Veeam Backup & Replication — backup jobs
+## 4. Veeam Backup & Replication
 
-1. สร้าง local/AD account แล้วกำหนด role **Veeam Backup Viewer** บน B&R server
-2. ขอ token: `POST https://<vbr>:9419/api/oauth2/token` แบบ form
-   (`grant_type=password`, `username`, `password`)
-3. ทุก request ต้องมี header `x-api-version` ให้ตรงกับเวอร์ชันของ B&R
-   (เช่น `1.3-rev1` สำหรับ v13.0.1) — ถ้าไม่ส่ง request จะล้มเหลว
-4. อ่านข้อมูล:
-   - `GET /api/v1/jobs/states` → สถานะ, เวลา run ล่าสุด, ผลลัพธ์ของแต่ละ job
-   - `GET /api/v1/sessions` → ประวัติย้อนหลัง ใช้คำนวณ "success rate 7 วัน"
-   - `GET /api/v1/backupInfrastructure/repositories/states` → พื้นที่ repository (ใส่การ์ด Storage)
+1. สร้าง local/AD account (เช่น `svc-itdash`) แล้วกำหนด role **Veeam Backup Viewer** บน B&R server
+2. ตั้ง `VEEAM_URL=https://<vbr>:9419`, `VEEAM_USERNAME`, `VEEAM_PASSWORD`
+3. ตั้ง `VEEAM_API_VERSION` ให้ตรงกับเวอร์ชันของ B&R — ถ้าไม่ตรง request จะล้มเหลว
+   (เช่น `1.3-rev1` สำหรับ v13.0.1) ดูค่าที่รองรับได้ที่ `https://<vbr>:9419/swagger/ui/index.html`
+4. B&R ใช้ใบรับรอง self-signed เป็นค่าเริ่มต้น — export ใบรับรองแล้วตั้ง `NODE_EXTRA_CA_CERTS` (อย่าปิดการตรวจ TLS)
 
-> path และ parameter ต่างกันเล็กน้อยตามเวอร์ชัน ตรวจได้ที่ Swagger บนเครื่อง B&R:
-> `https://<vbr>:9419/swagger/ui/index.html`
+ITDash เรียก `POST /api/oauth2/token` → `GET /api/v1/jobs/states` (สถานะ/ผลล่าสุด) และ `GET /api/v1/sessions` (คำนวณระยะเวลา)
+job ที่ disabled จะไม่แสดง · job บางประเภท (เช่น Proxmox) อาจไม่มี `lastRun` จะแสดงเป็น "never"
 
 ---
 
-## 5. Log และ security — event log
+## 5. Cohesity
 
-| ระบบ | วิธีอ่าน |
+1. สร้าง user ที่มี role แบบ view-only (เช่น *Viewer*) บน cluster
+2. สร้าง **API key** ให้ user นี้ (*Settings → Access Management → API Keys*) → ใส่ `COHESITY_API_KEY`
+   (ถ้าไม่ใช้ API key ใส่ `COHESITY_USERNAME`/`COHESITY_PASSWORD`/`COHESITY_DOMAIN` แทน)
+3. `COHESITY_URL` = VIP ของ cluster
+
+ITDash เรียก `GET /v2/data-protect/protection-groups?isDeleted=false&isActive=true&includeLastRunInfo=true`
+แล้วอ่าน `lastRun.localBackupInfo` (status, เวลาเริ่ม/จบ, `localSnapshotStats.bytesWritten`)
+protection group ที่ pause อยู่จะไม่แสดง
+
+> ถ้าใช้ **Cohesity Helios (SaaS)** แทน cluster ตรง ต้องเพิ่ม header `accessClusterId` — แจ้งได้ จะเพิ่มให้
+> ถ้า field ไหนว่าง ตรวจชื่อ field กับ API Explorer ของ cluster (เวอร์ชันต่างกันเล็กน้อย)
+
+---
+
+## ทดสอบโดยยังไม่มีระบบจริง
+
+มี server จำลองของทั้ง 5 ระบบไว้ทดสอบ/พัฒนาหน้าจอ (`scripts/fake-sources.mjs`):
+
+```bash
+npm run fake-sources   # terminal 1 — เปิด port 4101–4105
+npm run dev:fake       # terminal 2 — ITDash ที่ชี้ไปยัง server จำลอง (.env.fake)
+```
+
+ลองแก้ค่าใน `.env.fake` ให้ผิด (เช่น token) เพื่อดูหน้าจอตอนระบบล่มได้
+
+## ทดสอบหลังตั้งค่า
+
+```bash
+npm run build && npm start      # หรือ npm run dev
+```
+
+เปิดหน้า Overview แล้วดูป้ายมุมขวาของแต่ละการ์ด — ถ้าขึ้น `down` ให้ชี้เมาส์ดูสาเหตุ หรือดูใน log ของ server
+(ทุกข้อผิดพลาดขึ้นต้นด้วย `[itdash]`) ข้อความที่พบบ่อย:
+
+| ข้อความ | สาเหตุ |
 | --- | --- |
-| Zabbix | `event.get` ล่าสุด 20 รายการ (ได้ทันทีจากข้อ 1) |
-| Graylog | REST API ที่ `/api` ใช้ access token ของ user read-only; ดู endpoint ค้นหาของเวอร์ชันที่ใช้ใน API browser (`/api/api-browser`) |
-| Wazuh | ค้นใน index `wazuh-alerts-*` ของ Wazuh Indexer (OpenSearch `:9200/_search`) กรอง `rule.level >= 10` |
-
-รวมทุกแหล่งเป็น `LogLine[]` เดียว เรียงตามเวลา แล้วตัดเหลือ 20 บรรทัด
-
----
-
-## 6. ล็อกอินเข้า dashboard (SSO)
-
-- **Microsoft 365 / Entra ID:** ใช้ [Auth.js](https://authjs.dev) provider *Microsoft Entra ID*
-  แล้วจำกัดเฉพาะสมาชิก group `IT-Staff`
-- **AD ภายในอย่างเดียว:** ใช้ Auth.js *Credentials* provider ตรวจรหัสผ่านกับ AD ผ่าน LDAPS (`ldapts`)
-- ไม่ว่าแบบไหน ให้ dashboard เปิดเฉพาะเครือข่ายภายใน/VPN ด้วย
-
----
-
-## รูปแบบโค้ด adapter
-
-ตัวอย่าง adapter ของ Zabbix — ทุกระบบใช้โครงเดียวกัน
-
-```ts
-// src/lib/sources/zabbix.ts
-import "server-only"; // npm i server-only — กันไม่ให้ไฟล์นี้หลุดไปฝั่งเบราว์เซอร์
-import { cacheLife } from "next/cache";
-import type { LogLine } from "@/lib/data/overview";
-
-async function zabbix<T>(method: string, params: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${process.env.ZABBIX_URL}/api_jsonrpc.php`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json-rpc",
-      Authorization: `Bearer ${process.env.ZABBIX_TOKEN}`,
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
-  });
-  if (!res.ok) throw new Error(`Zabbix HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.error) throw new Error(`Zabbix ${method}: ${json.error.data}`);
-  return json.result as T;
-}
-
-type ZbxProblem = { eventid: string; name: string; severity: string; clock: string };
-
-export async function getActiveProblems(): Promise<LogLine[]> {
-  "use cache";
-  cacheLife("live"); // โปรไฟล์ 30 วินาที (ตั้งใน next.config.ts ด้านล่าง)
-
-  const problems = await zabbix<ZbxProblem[]>("problem.get", {
-    output: ["eventid", "name", "severity", "clock"],
-    recent: true,
-    sortfield: ["eventid"],
-    sortorder: "DESC",
-    limit: 20,
-  });
-
-  return problems.map((p) => ({
-    ts: new Date(Number(p.clock) * 1000).toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok" }),
-    level: Number(p.severity) >= 4 ? "CRIT" : "WARN",
-    source: "zabbix",
-    message: p.name,
-  }));
-}
-```
-
-โปรไฟล์ cache ที่ใช้ร่วมกันทั้งโปรเจกต์:
-
-```ts
-// next.config.ts  (เพิ่มใน nextConfig)
-cacheLife: {
-  live:   { stale: 30,  revalidate: 30,   expire: 300 },   // สถานะบริการ, incident, log
-  queue:  { stale: 60,  revalidate: 60,   expire: 600 },   // ticket
-  ops:    { stale: 300, revalidate: 600,  expire: 3600 },  // backup, traffic
-  slow:   { stale: 300, revalidate: 3600, expire: 86400 }, // storage, assets
-},
-```
-
-ให้หน้าจอรีเฟรชเองทุก 60 วินาที (วาง `<AutoRefresh />` ไว้ใน layout):
-
-```tsx
-// src/components/auto-refresh.tsx
-"use client";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-
-export function AutoRefresh({ seconds = 60 }: { seconds?: number }) {
-  const router = useRouter();
-  useEffect(() => {
-    const id = setInterval(() => router.refresh(), seconds * 1000);
-    return () => clearInterval(id);
-  }, [router, seconds]);
-  return null;
-}
-```
-
-ถ้าระบบต้นทางตัวไหนล่ม อย่าให้ทั้งหน้าพัง — เรียกทุกแหล่งด้วย `Promise.allSettled`
-หรือแยกแต่ละการ์ดเป็น async component ห่อด้วย `<Suspense>` ของตัวเอง
+| `zabbix: host.get: Not authorized.` | token ผิด/หมดอายุ หรือ role ไม่ได้อนุญาต method นั้น |
+| `cannot reach … (ECONNREFUSED)` | URL/port ผิด หรือ firewall ปิด |
+| `cannot reach … (self-signed certificate)` | ต้องตั้ง `NODE_EXTRA_CA_CERTS` |
+| `veeam: HTTP 400` | `VEEAM_API_VERSION` ไม่ตรงกับเวอร์ชัน B&R |
+| `elasticsearch: HTTP 403` | API key ไม่มีสิทธิ์ read บน `ES_INDEX` |
+| การ์ด Service health ว่าง | `PROM_Q_PROBE` ไม่คืน series — ลองใน Prometheus ก่อน |
 
 ---
 
 ## Checklist ความปลอดภัย
 
 - [ ] ทุกบัญชีที่ ITDash ใช้เป็น **read-only** และใช้กับ ITDash อย่างเดียว
-- [ ] เก็บ URL/token ใน `.env.local` บน server (ไฟล์นี้ไม่ถูก commit — ดูตัวอย่างใน `.env.example`)
-- [ ] ห้ามใช้ prefix `NEXT_PUBLIC_` กับค่าลับ เพราะจะถูกฝังไปในโค้ดฝั่งเบราว์เซอร์
-- [ ] ใช้ HTTPS ทุกเส้นทาง ถ้าเป็นใบรับรองของ CA องค์กรให้ตั้ง `NODE_EXTRA_CA_CERTS` — ห้ามปิดการตรวจ TLS
-- [ ] dashboard เปิดเฉพาะเครือข่ายภายใน/VPN และบังคับล็อกอินด้วย SSO
-- [ ] ตั้งรอบหมุนเวียน token (เช่น ทุก 90 วัน) และใส่วันหมดอายุตอนสร้าง token ใน Zabbix
+- [ ] เก็บค่าลับใน `.env.local` บน server เท่านั้น ห้ามใช้ prefix `NEXT_PUBLIC_`
+- [ ] HTTPS ทุกเส้นทาง ใบรับรองภายในใช้ `NODE_EXTRA_CA_CERTS` — ห้ามตั้ง `NODE_TLS_REJECT_UNAUTHORIZED=0`
+- [ ] dashboard เปิดเฉพาะเครือข่ายภายใน/VPN และบังคับล็อกอิน (SSO — ยังไม่ได้ทำ)
+- [ ] ตั้งรอบหมุนเวียน token / API key / รหัสผ่าน (เช่น ทุก 90 วัน)

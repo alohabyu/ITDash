@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 
-import type { ThroughputPoint } from "@/lib/data/overview";
+import type { ThroughputPoint } from "@/lib/data/types";
 
 const series = [
   { key: "inbound", label: "Inbound", color: "var(--chart-1)" },

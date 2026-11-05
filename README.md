@@ -1,6 +1,8 @@
 # ITDash
 
-Dashboard สำหรับงานไอทีขององค์กร (network, servers, service desk, backups) — ธีม "phosphor console" สีเขียวแบบ terminal พัฒนาขึ้นเองบน Next.js + shadcn/ui
+Dashboard สำหรับงานไอทีขององค์กร (network, servers, logs, backups) — ธีม "phosphor console" สีเขียวแบบ terminal พัฒนาขึ้นเองบน Next.js + shadcn/ui
+
+ดึงข้อมูลจริงจาก **Zabbix, Prometheus, Elasticsearch, Veeam B&R และ Cohesity** — ระบบไหนยังไม่ได้ตั้งค่า การ์ดนั้นแสดงข้อมูลตัวอย่าง
 
 ## เริ่มใช้งาน
 
@@ -11,6 +13,16 @@ npm run build && npm start   # production
 ```
 
 ต้องใช้ Node.js 20+ — ฟอนต์ (IBM Plex Sans / Mono / Sans Thai) ติดตั้งผ่าน npm จึง build ได้แม้ไม่มีอินเทอร์เน็ต
+
+### ต่อข้อมูลจริง
+
+```bash
+cp .env.example .env.local   # ใส่ URL + token ของแต่ละระบบ
+npm run build && npm start
+```
+
+ไม่ได้ตั้ง `.env.local` = ทุกการ์ดแสดงข้อมูลตัวอย่าง (ป้าย `sample`)
+วิธีเตรียมบัญชี/สิทธิ์ของแต่ละระบบ และการปรับ PromQL / field ของ Elasticsearch อยู่ใน [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
 
 ## Stack
 
@@ -36,10 +48,15 @@ src/
 ├── components/
 │   ├── ui/                        # button, card, badge, input, sheet, dropdown-menu
 │   ├── layout/                    # sidebar, header, theme-toggle
-│   └── dashboard/                 # kpi-tile, throughput-chart, service-matrix, ...
+│   └── dashboard/                 # overview-cards (การ์ดแบบ async), kpi-tile, charts, ...
 └── lib/
     ├── navigation.ts              # เมนู sidebar ทั้งหมดอยู่ที่นี่ที่เดียว
-    ├── data/overview.ts           # mock data + types
+    ├── data/
+    │   ├── types.ts               # type กลางที่ทุก adapter คืนค่า
+    │   ├── index.ts               # loadX() ต่อการ์ด: live / sample / error
+    │   └── mock.ts                # ข้อมูลตัวอย่าง
+    ├── sources/                   # adapter: zabbix, prometheus, elasticsearch, veeam, cohesity
+    ├── format.ts                  # เวลา (Asia/Bangkok), ขนาดไฟล์, ระยะเวลา
     └── utils.ts                   # cn()
 ```
 
@@ -55,12 +72,13 @@ src/
 1. สร้าง `src/app/(dashboard)/tickets/page.tsx` (โฟลเดอร์จริงจะทับ placeholder `[section]` อัตโนมัติ)
 2. ถ้าเป็นเมนูใหม่ เพิ่มรายการใน `src/lib/navigation.ts`
 
-**ต่อข้อมูลจริง** — หน้า Overview อ่านข้อมูลจาก `src/lib/data/overview.ts` เท่านั้น เปลี่ยนแต่ละ export ให้ไป fetch จาก API (Zabbix, PRTG, GLPI, Veeam ฯลฯ) โดยคง type เดิมไว้ หน้าจอก็ไม่ต้องแก้
+**เพิ่มระบบใหม่** (เช่น ระบบ ticket) — เขียน adapter ใน `src/lib/sources/` ให้คืนค่าเป็น type ใน `types.ts`
+แล้วต่อเข้า loader ใน `src/lib/data/index.ts` — หน้าจอไม่ต้องแก้
 
 ## เอกสาร
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — ไดอะแกรมสถาปัตยกรรม, การไหลของข้อมูล, การวางเครื่องในเครือข่าย
-- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — วิธีเชื่อมต่อ Zabbix, Uptime Kuma, GLPI, Veeam, Graylog/Wazuh และ SSO
+- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — วิธีเชื่อมต่อ Zabbix, Prometheus, Elasticsearch (+ log files), Veeam, Cohesity และการแก้ปัญหา
 - [.env.example](.env.example) — ตัวแปรที่ต้องตั้งเมื่อต่อระบบจริง
 
 ## Design notes

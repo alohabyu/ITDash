@@ -1,4 +1,4 @@
-import type { ServiceRow, ServiceStatus } from "@/lib/data/overview";
+import type { ServiceRow, ServiceStatus } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
 const cellTone: Record<ServiceStatus, string> = {
@@ -6,6 +6,7 @@ const cellTone: Record<ServiceStatus, string> = {
   degraded: "bg-warning",
   down: "bg-destructive",
   maint: "bg-info/60",
+  nodata: "bg-muted",
 };
 
 const statusLabel: Record<ServiceStatus, string> = {
@@ -13,6 +14,7 @@ const statusLabel: Record<ServiceStatus, string> = {
   degraded: "degraded",
   down: "down",
   maint: "maintenance",
+  nodata: "no data",
 };
 
 export function ServiceMatrixLegend() {
@@ -70,10 +72,10 @@ export function ServiceMatrix({ rows }: { rows: ServiceRow[] }) {
             <div
               className={cn(
                 "text-right font-mono text-xs tabular-nums",
-                row.uptime < 99.5 ? "text-warning" : "text-muted-foreground",
+                row.uptime !== null && row.uptime < 99.5 ? "text-warning" : "text-muted-foreground",
               )}
             >
-              {row.uptime.toFixed(2)}%
+              {row.uptime === null ? "—" : `${row.uptime.toFixed(2)}%`}
             </div>
           </div>
         );

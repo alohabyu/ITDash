@@ -1,4 +1,4 @@
-import type { TicketCategory } from "@/lib/data/overview";
+import type { TicketCategory } from "@/lib/data/types";
 
 /** Horizontal bars, drawn with CSS — no chart library needed for this one. */
 export function TicketQueue({ data }: { data: TicketCategory[] }) {

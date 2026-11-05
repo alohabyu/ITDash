@@ -1,4 +1,4 @@
-import type { Storage } from "@/lib/data/overview";
+import type { Storage } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
 const SEGMENTS = 20;

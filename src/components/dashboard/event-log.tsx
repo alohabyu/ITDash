@@ -1,4 +1,5 @@
-import type { LogLevel, LogLine } from "@/lib/data/overview";
+import type { LogLevel, LogLine } from "@/lib/data/types";
+import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const levelTone: Record<LogLevel, string> = {
@@ -21,10 +22,10 @@ export function EventLog({ lines }: { lines: LogLine[] }) {
               l.level === "CRIT" && "bg-destructive/[0.07]",
             )}
           >
-            <span className="text-muted-foreground tabular-nums">{l.ts}</span>
+            <span className="text-muted-foreground tabular-nums">{formatTime(l.time)}</span>
             <span className={cn("font-medium", levelTone[l.level])}>{l.level}</span>
             <span className="truncate text-muted-foreground">{l.source}</span>
-            <span className="truncate">{l.message}</span>
+            <span className="truncate" title={l.message}>{l.message}</span>
           </li>
         ))}
         <li className="px-2 text-muted-foreground">
